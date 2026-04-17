@@ -23,7 +23,7 @@ final class CommandProcessor {
 
     private void processConnect(String[] parts, String message, int clientId, Socket socket, BufferedWriter out) throws IOException {
         if (parts.length < 2) {
-            send(out, "ERROR CONNECT requiere nombre");
+            send(out, ProtocolConfig.error("BAD_CONNECT", "CONNECT requiere nombre"));
             return;
         }
 
@@ -33,7 +33,7 @@ final class CommandProcessor {
 
     private void processPlace(String[] parts, int clientId, BufferedWriter out) throws IOException {
         if (parts.length != 5) {
-            send(out, "ERROR Formato esperado: PLACE <Barco> <x> <y> <H/V>");
+            send(out, ProtocolConfig.error("BAD_PLACE", "Formato esperado: PLACE <Barco> <x> <y> <H/V>"));
             return;
         }
 
@@ -42,7 +42,7 @@ final class CommandProcessor {
 
     private void processAttack(String[] parts, int clientId, BufferedWriter out) throws IOException {
         if (parts.length != 3) {
-            send(out, "ERROR Formato esperado: ATTACK <x> <y>");
+            send(out, ProtocolConfig.error("BAD_ATTACK", "Formato esperado: ATTACK <x> <y>"));
             return;
         }
 

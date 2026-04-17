@@ -21,7 +21,7 @@ final class GameSession {
         );
 
         if (connection.playerId() != null) {
-            connection.send("ERROR Ya estas conectado");
+            connection.send(ProtocolConfig.error("ALREADY_CONNECTED", "Ya estas conectado"));
             return;
         }
 
@@ -33,8 +33,8 @@ final class GameSession {
             );
         }
 
-        if (players.size() >= 2) {
-            connection.send("ERROR La sala esta llena. Espera a que finalice la partida.");
+        if (players.size() >= ProtocolConfig.MAX_PLAYERS) {
+            connection.send(ProtocolConfig.error("ROOM_FULL", "La sala esta llena. Espera a que finalice la partida."));
             connection.closeQuietly();
             return;
         }
@@ -60,17 +60,17 @@ final class GameSession {
     synchronized void place(int clientId, BufferedWriter out, String shipNameRaw, String xRaw, String yRaw, String orientationRaw) throws IOException {
         PlayerConnection connection = connections.get(clientId);
         if (connection == null || connection.playerId() == null) {
-            sendToRawClient(out, "ERROR Debes ejecutar CONNECT primero");
+            sendToRawClient(out, ProtocolConfig.error("NOT_CONNECTED", "Debes ejecutar CONNECT primero"));
             return;
         }
 
         if (!setupStarted || players.size() < 2) {
-            sendToRawClient(out, "ERROR Espera a que se conecte el segundo jugador");
+            sendToRawClient(out, ProtocolConfig.error("WAITING_PLAYER", "Espera a que se conecte el segundo jugador"));
             return;
         }
 
         if (battleStarted) {
-            sendToRawClient(out, "ERROR La fase de combate ya comenzo");
+            sendToRawClient(out, ProtocolConfig.error("BATTLE_STARTED", "La fase de combate ya comenzo"));
             return;
         }
 
@@ -79,12 +79,12 @@ final class GameSession {
         Integer shipSize = ProtocolConfig.SHIP_SIZES.get(shipName);
 
         if (shipSize == null) {
-            sendToRawClient(out, "ERROR Barco no valido: " + shipNameRaw);
+            sendToRawClient(out, ProtocolConfig.error("INVALID_SHIP", "Barco no valido: " + shipNameRaw));
             return;
         }
 
         if (state.hasShip(shipName)) {
-            sendToRawClient(out, "ERROR Ya colocaste el barco " + shipName);
+            sendToRawClient(out, ProtocolConfig.error("DUPLICATE_SHIP", "Ya colocaste el barco " + shipName));
             return;
         }
 
@@ -94,25 +94,25 @@ final class GameSession {
             startX = ProtocolConfig.parseCoordinate(xRaw, "x");
             startY = ProtocolConfig.parseCoordinate(yRaw, "y");
         } catch (IllegalArgumentException e) {
-            sendToRawClient(out, "ERROR " + e.getMessage());
+            sendToRawClient(out, ProtocolConfig.error("BAD_COORDINATE", e.getMessage()));
             return;
         }
 
         String orientation = orientationRaw.toUpperCase();
         if (!orientation.equals("H") && !orientation.equals("V")) {
-            sendToRawClient(out, "ERROR La orientacion debe ser H o V");
+            sendToRawClient(out, ProtocolConfig.error("BAD_ORIENTATION", "La orientacion debe ser H o V"));
             return;
         }
 
         List<Point> cells = buildShipCells(startX, startY, shipSize, orientation);
         if (cells.isEmpty()) {
-            sendToRawClient(out, "ERROR Posicion invalida para " + shipName);
+            sendToRawClient(out, ProtocolConfig.error("INVALID_PLACEMENT", "Posicion invalida para " + shipName));
             return;
         }
 
         for (Point point : cells) {
             if (state.hasOccupiedCell(point)) {
-                sendToRawClient(out, "ERROR El barco se superpone con otro existente");
+                sendToRawClient(out, ProtocolConfig.error("SHIP_OVERLAP", "El barco se superpone con otro existente"));
                 return;
             }
         }
@@ -133,18 +133,18 @@ final class GameSession {
     synchronized void attack(int clientId, BufferedWriter out, String xRaw, String yRaw) throws IOException {
         PlayerConnection connection = connections.get(clientId);
         if (connection == null || connection.playerId() == null) {
-            sendToRawClient(out, "ERROR Debes ejecutar CONNECT primero");
+            sendToRawClient(out, ProtocolConfig.error("NOT_CONNECTED", "Debes ejecutar CONNECT primero"));
             return;
         }
 
         if (!battleStarted) {
-            sendToRawClient(out, "ERROR La batalla aun no puede comenzar");
+            sendToRawClient(out, ProtocolConfig.error("BATTLE_NOT_READY", "La batalla aun no puede comenzar"));
             return;
         }
 
         int attackerId = connection.playerId();
         if (attackerId != currentTurn) {
-            sendToRawClient(out, "ERROR No es tu turno");
+            sendToRawClient(out, ProtocolConfig.error("NOT_YOUR_TURN", "No es tu turno"));
             return;
         }
 
@@ -154,25 +154,25 @@ final class GameSession {
             targetX = ProtocolConfig.parseCoordinate(xRaw, "x");
             targetY = ProtocolConfig.parseCoordinate(yRaw, "y");
         } catch (IllegalArgumentException e) {
-            sendToRawClient(out, "ERROR " + e.getMessage());
+            sendToRawClient(out, ProtocolConfig.error("BAD_COORDINATE", e.getMessage()));
             return;
         }
 
         if (!ProtocolConfig.isInsideBoard(targetX, targetY)) {
-            sendToRawClient(out, "ERROR Coordenada fuera del tablero");
+            sendToRawClient(out, ProtocolConfig.error("OUT_OF_BOARD", "Coordenada fuera del tablero"));
             return;
         }
 
         int defenderId = opponentOf(attackerId);
         PlayerState defender = players.get(defenderId);
         if (defender == null) {
-            sendToRawClient(out, "ERROR No hay oponente disponible");
+            sendToRawClient(out, ProtocolConfig.error("NO_OPPONENT", "No hay oponente disponible"));
             return;
         }
 
         Point target = new Point(targetX, targetY);
         if (defender.hasAlreadyBeenAttacked(target)) {
-            sendToRawClient(out, "ERROR Esa coordenada ya fue atacada");
+            sendToRawClient(out, ProtocolConfig.error("ALREADY_ATTACKED", "Esa coordenada ya fue atacada"));
             return;
         }
 
@@ -220,12 +220,26 @@ final class GameSession {
 
         if (!matchFinished) {
             try {
-                broadcast("ERROR El oponente se desconecto. La partida se reiniciara.");
+                broadcast(ProtocolConfig.error("OPPONENT_DISCONNECTED", "El oponente se desconecto. La partida se reiniciara."));
             } catch (IOException e) {
                 ServerLogger.error("No se pudo notificar la desconexion: " + e.getMessage());
             }
             endMatch();
         }
+    }
+
+    synchronized void shutdown() {
+        try {
+            broadcast(ProtocolConfig.error("SERVER_SHUTDOWN", "Servidor en cierre"));
+        } catch (IOException e) {
+            ServerLogger.error("No se pudo notificar cierre de servidor: " + e.getMessage());
+        }
+
+        for (PlayerConnection connection : new ArrayList<>(connections.values())) {
+            connection.closeQuietly();
+        }
+
+        resetState();
     }
 
     private List<Point> buildShipCells(int startX, int startY, int size, String orientation) {

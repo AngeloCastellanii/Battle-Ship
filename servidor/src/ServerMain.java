@@ -5,6 +5,8 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -21,6 +23,11 @@ public class ServerMain {
 
         try (ServerSocket serverSocket = new ServerSocket(port);
              ExecutorService clientExecutor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                ServerLogger.info("Ejecutando cierre ordenado del servidor...");
+                session.shutdown();
+            }));
 
             ServerLogger.info("Servidor listo. Esperando conexiones...");
 
@@ -44,6 +51,8 @@ public class ServerMain {
              BufferedWriter out = new BufferedWriter(
                  new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8))) {
 
+            socket.setSoTimeout(ProtocolConfig.CLIENT_READ_TIMEOUT_MS);
+
             String line;
             while ((line = in.readLine()) != null) {
                 String message = line.trim();
@@ -57,6 +66,12 @@ public class ServerMain {
 
             session.handleDisconnect(clientId);
             ServerLogger.info("Cliente #" + clientId + " se desconecto");
+        } catch (SocketTimeoutException e) {
+            session.handleDisconnect(clientId);
+            ServerLogger.error("Cliente #" + clientId + " inactivo por timeout de lectura");
+        } catch (SocketException e) {
+            session.handleDisconnect(clientId);
+            ServerLogger.info("Socket de cliente #" + clientId + " cerrado");
         } catch (IOException e) {
             session.handleDisconnect(clientId);
             ServerLogger.error("Conexion con cliente #" + clientId + " finalizada por error: " + e.getMessage());
