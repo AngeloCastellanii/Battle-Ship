@@ -1,27 +1,30 @@
-﻿import java.io.*;
-import java.net.Socket;
-import java.util.Scanner;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.*;
 import javafx.application.Application;
 import javafx.application.Platform;
-import javafx.geometry.Insets;
-import javafx.geometry.Pos;
-import javafx.scene.Scene;
-import javafx.scene.control.*;
-import javafx.scene.layout.*;
 import javafx.stage.Stage;
 
 public class BattleshipClient extends Application {
 
-    private ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-    private Scanner scanner = new Scanner(System.in);
+    private static final class PendingPlacement {
+        final String ship;
+        final int x;
+        final int y;
+        final String orientation;
+        final int size;
 
-    private boolean placementPhase = false;
+        PendingPlacement(String ship, int x, int y, String orientation, int size) {
+            this.ship = ship;
+            this.x = x;
+            this.y = y;
+            this.orientation = orientation;
+            this.size = size;
+        }
+    }
+
     private final java.util.List<String> shipsToPlace = java.util.List.of("PORTAAVIONES", "ACORAZADO", "SUBMARINO", "DESTRUCTOR", "LANCHA");
     private volatile boolean waitingForPlace = false;
     private String currentShip;
+    private PendingPlacement pendingPlacement;
     private boolean myTurn = false;
     private int currentPlayerId = -1;
 
@@ -40,7 +43,7 @@ public class BattleshipClient extends Application {
         gameManager = new GameManager(this);
 
         uiManager.createScenes();
-        primaryStage.setTitle("Battleship Client");
+        primaryStage.setTitle("Battleship Client - JavaFX");
         primaryStage.setScene(uiManager.getConnectionScene());
         primaryStage.show();
     }
@@ -75,6 +78,13 @@ public class BattleshipClient extends Application {
         Platform.runLater(() -> uiManager.showAlert("Connection Failed", message));
     }
 
+    public void showConnectionLost(String message) {
+        Platform.runLater(() -> {
+            uiManager.showAlert("Connection Lost", message);
+            uiManager.showReconnectOption();
+        });
+    }
+
     public void showError(String message) {
         Platform.runLater(() -> uiManager.showAlert("Server Error", message));
     }
@@ -86,9 +96,16 @@ public class BattleshipClient extends Application {
         });
     }
 
+    public void setStatus(String text) {
+        uiManager.setStatus(text);
+    }
+
     public void setTurn(boolean turn) {
         myTurn = turn;
-        Platform.runLater(() -> uiManager.setStatus(myTurn ? "Your turn!" : "Opponent's turn."));
+        Platform.runLater(() -> {
+            uiManager.setStatus(myTurn ? "Your turn!" : "Opponent's turn.");
+            uiManager.setEnemyGridEnabled(myTurn);
+        });
     }
 
     public boolean validatePlacement(String ship, int x, int y, String ori) {
@@ -123,6 +140,36 @@ public class BattleshipClient extends Application {
         currentShip = ship;
     }
 
+    public void setPendingPlacement(String ship, int x, int y, String orientation, int size) {
+        pendingPlacement = new PendingPlacement(ship, x, y, orientation, size);
+    }
+
+    public void confirmCurrentPlacement(String serverShipName) {
+        if (pendingPlacement == null || !pendingPlacement.ship.equals(serverShipName)) {
+            return;
+        }
+
+        placeOnBoard(
+            pendingPlacement.ship,
+            pendingPlacement.x,
+            pendingPlacement.y,
+            pendingPlacement.orientation
+        );
+        addPlacedShip(pendingPlacement.ship);
+        uiManager.confirmShipPlacement(
+            pendingPlacement.ship,
+            pendingPlacement.x,
+            pendingPlacement.y,
+            pendingPlacement.orientation,
+            pendingPlacement.size
+        );
+        pendingPlacement = null;
+    }
+
+    public void rejectCurrentPlacement() {
+        pendingPlacement = null;
+    }
+
     public int getCurrentPlayerId() {
         return currentPlayerId;
     }
@@ -133,45 +180,5 @@ public class BattleshipClient extends Application {
 
     public void sendMessage(String message) {
         networkManager.sendMessage(message);
-    }
-
-    // Legacy methods (not used in GUI version)
-    private void startPlacement() {
-        System.out.println("Ship placement phase. Place your ships:");
-        for (String ship : shipsToPlace) {
-            if (gameManager.isShipPlaced(ship)) continue;
-            placeShip(ship);
-        }
-        System.out.println("All ships placed. Waiting for opponent...");
-    }
-
-    private void placeShip(String ship) {
-        while (true) {
-            System.out.println("Placing " + ship + " (size " + gameManager.getShipSize(ship) + ")");
-            System.out.print("X (0-9): ");
-            int x = scanner.nextInt();
-            System.out.print("Y (0-9): ");
-            int y = scanner.nextInt();
-            scanner.nextLine();
-            System.out.print("Orientation (H/V): ");
-            String ori = scanner.nextLine().trim().toUpperCase();
-
-            if (validatePlacement(ship, x, y, ori)) {
-                placeOnBoard(ship, x, y, ori);
-                currentShip = ship;
-                waitingForPlace = true;
-                networkManager.sendMessage("PLACE " + ship + " " + x + " " + y + " " + ori);
-                while (waitingForPlace) {
-                    try {
-                        Thread.sleep(100);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
-                }
-                break;
-            } else {
-                System.out.println("Invalid placement. Try again.");
-            }
-        }
     }
 }

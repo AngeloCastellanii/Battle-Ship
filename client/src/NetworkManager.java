@@ -16,6 +16,9 @@ public class NetworkManager {
 
     public void connectToServer(String host, int port, String name) {
         try {
+            if (socket != null && !socket.isClosed()) {
+                socket.close();
+            }
             socket = new Socket(host, port);
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out = new PrintWriter(socket.getOutputStream(), true);
@@ -40,6 +43,7 @@ public class NetworkManager {
             }
         } catch (IOException e) {
             System.out.println("Connection lost: " + e.getMessage());
+            client.showConnectionLost("Connection lost. Please reconnect.");
         }
     }
 
@@ -82,13 +86,17 @@ public class NetworkManager {
             }
             case "PLACE_OK" -> {
                 if (parts.length >= 2 && parts[1].equals(client.getCurrentShip())) {
-                    client.addPlacedShip(client.getCurrentShip());
-                    System.out.println("Barco " + client.getCurrentShip() + " colocado exitosamente.");
+                    client.confirmCurrentPlacement(parts[1]);
+                    System.out.println("Barco " + parts[1] + " colocado exitosamente.");
                     client.setWaitingForPlace(false);
                 }
             }
+            case "READY" -> {
+                client.setStatus("Fleet deployed. Waiting for opponent...");
+            }
             case "ERROR" -> {
                 String errorMsg = message.substring(6);
+                client.rejectCurrentPlacement();
                 client.showError(errorMsg);
                 if (client.isWaitingForPlace()) {
                     client.setWaitingForPlace(false);
