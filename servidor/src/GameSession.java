@@ -245,8 +245,9 @@ final class GameSession {
     private List<Point> buildShipCells(int startX, int startY, int size, String orientation) {
         List<Point> cells = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
-            int x = orientation.equals("H") ? startX + i : startX;
-            int y = orientation.equals("V") ? startY + i : startY;
+            // H: avanza en columnas (y), V: avanza en filas (x).
+            int x = orientation.equals("V") ? startX + i : startX;
+            int y = orientation.equals("H") ? startY + i : startY;
 
             if (!ProtocolConfig.isInsideBoard(x, y)) {
                 return List.of();
