@@ -1,0 +1,13 @@
+{
+    "java.project.sourcePaths": ["client/src", "servidor/src"],
+    "java.project.outputPath": "bin",
+    "java.project.referencedLibraries": [
+        "C:/Users/User/Downloads/javafx-sdk-26/lib/javafx.base.jar",
+        "C:/Users/User/Downloads/javafx-sdk-26/lib/javafx.controls.jar",
+        "C:/Users/User/Downloads/javafx-sdk-26/lib/javafx.fxml.jar",
+        "C:/Users/User/Downloads/javafx-sdk-26/lib/javafx.graphics.jar",
+        "C:/Users/User/Downloads/javafx-sdk-26/lib/javafx.media.jar",
+        "C:/Users/User/Downloads/javafx-sdk-26/lib/javafx.swing.jar",
+        "C:/Users/User/Downloads/javafx-sdk-26/lib/javafx.web.jar"
+    ]
+}
