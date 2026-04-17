@@ -1,14 +1,18 @@
 import java.io.*;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class NetworkManager {
+    private static final int CONNECT_TIMEOUT_MS = 5000;
+
     private BattleshipClient client;
     private Socket socket;
     private BufferedReader in;
     private PrintWriter out;
     private ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    private volatile boolean connected = false;
 
     public NetworkManager(BattleshipClient client) {
         this.client = client;
@@ -16,20 +20,21 @@ public class NetworkManager {
 
     public void connectToServer(String host, int port, String name) {
         try {
-            if (socket != null && !socket.isClosed()) {
-                socket.close();
-            }
-            socket = new Socket(host, port);
+            close();
+
+            socket = new Socket();
+            socket.connect(new InetSocketAddress(host, port), CONNECT_TIMEOUT_MS);
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out = new PrintWriter(socket.getOutputStream(), true);
+            connected = false;
 
             out.println("CONNECT " + name);
+            client.setStatus("Connection request sent. Waiting for server...");
 
             executor.submit(this::listenForMessages);
 
-            client.switchToCombat();
-
         } catch (IOException e) {
+            close();
             client.showConnectionError(e.getMessage());
         }
     }
@@ -41,9 +46,21 @@ public class NetworkManager {
                 System.out.println("Received: " + message);
                 processMessage(message);
             }
+
+            if (!connected) {
+                client.showConnectionError("Server closed the connection during login.");
+            } else {
+                client.showConnectionLost("Connection closed by server.");
+            }
         } catch (IOException e) {
             System.out.println("Connection lost: " + e.getMessage());
-            client.showConnectionLost("Connection lost. Please reconnect.");
+            if (!connected) {
+                client.showConnectionError("Could not complete login: " + e.getMessage());
+            } else {
+                client.showConnectionLost("Connection lost. Please reconnect.");
+            }
+        } finally {
+            close();
         }
     }
 
@@ -56,6 +73,7 @@ public class NetworkManager {
             case "START" -> {
                 if (parts.length >= 2) {
                     client.showPlacement();
+                    client.setStatus("Both players connected. Place your ships.");
                 }
             }
             case "TURN" -> {
@@ -82,8 +100,12 @@ public class NetworkManager {
             case "CONNECTED" -> {
                 if (parts.length >= 2) {
                     client.setCurrentPlayerId(Integer.parseInt(parts[1]));
+                    connected = true;
+                    client.switchToCombat();
+                    client.setStatus("Connected as player " + parts[1] + ". Waiting for opponent...");
                 }
             }
+            case "WAITING_FOR_OPPONENT" -> client.setStatus("Waiting for second player...");
             case "PLACE_OK" -> {
                 if (parts.length >= 2 && parts[1].equals(client.getCurrentShip())) {
                     client.confirmCurrentPlacement(parts[1]);
@@ -97,6 +119,13 @@ public class NetworkManager {
             case "ERROR" -> {
                 String errorMsg = message.substring(6);
                 client.rejectCurrentPlacement();
+
+                if (!connected) {
+                    client.showConnectionError(errorMsg);
+                    close();
+                    return;
+                }
+
                 client.showError(errorMsg);
                 if (client.isWaitingForPlace()) {
                     client.setWaitingForPlace(false);
@@ -112,10 +141,15 @@ public class NetworkManager {
     }
 
     public void close() {
+        connected = false;
         try {
             if (socket != null) socket.close();
         } catch (IOException e) {
             // Ignore
+        } finally {
+            socket = null;
+            in = null;
+            out = null;
         }
     }
 }
