@@ -3,3 +3,9 @@ start_both.ps1
 start_both.bat
 INTEGRATION_TESTS.md
 PRD_Juego de Batalla Naval Multijugador (Java 25).md
+
+# Java build artifacts
+*.class
+out/
+build/
+target/
