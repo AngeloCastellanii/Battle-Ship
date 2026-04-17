@@ -1,4 +1,4 @@
-﻿import java.io.*;
+import java.io.*;
 import java.net.Socket;
 import java.util.Scanner;
 import java.util.concurrent.ExecutorService;
@@ -75,6 +75,13 @@ public class BattleshipClient extends Application {
         Platform.runLater(() -> uiManager.showAlert("Connection Failed", message));
     }
 
+    public void showConnectionLost(String message) {
+        Platform.runLater(() -> {
+            uiManager.showAlert("Connection Lost", message);
+            uiManager.showReconnectOption();
+        });
+    }
+
     public void showError(String message) {
         Platform.runLater(() -> uiManager.showAlert("Server Error", message));
     }
@@ -88,7 +95,10 @@ public class BattleshipClient extends Application {
 
     public void setTurn(boolean turn) {
         myTurn = turn;
-        Platform.runLater(() -> uiManager.setStatus(myTurn ? "Your turn!" : "Opponent's turn."));
+        Platform.runLater(() -> {
+            uiManager.setStatus(myTurn ? "Your turn!" : "Opponent's turn.");
+            uiManager.setEnemyGridEnabled(myTurn);
+        });
     }
 
     public boolean validatePlacement(String ship, int x, int y, String ori) {

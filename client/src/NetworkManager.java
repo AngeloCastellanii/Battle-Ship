@@ -16,6 +16,9 @@ public class NetworkManager {
 
     public void connectToServer(String host, int port, String name) {
         try {
+            if (socket != null && !socket.isClosed()) {
+                socket.close();
+            }
             socket = new Socket(host, port);
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out = new PrintWriter(socket.getOutputStream(), true);
@@ -40,6 +43,7 @@ public class NetworkManager {
             }
         } catch (IOException e) {
             System.out.println("Connection lost: " + e.getMessage());
+            client.showConnectionLost("Connection lost. Please reconnect.");
         }
     }
 

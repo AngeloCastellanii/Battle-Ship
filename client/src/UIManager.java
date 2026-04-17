@@ -164,10 +164,10 @@ public class UIManager {
         combatScene = new Scene(borderPane, 900, 600);
     }
 
-    public void switchToCombat() {
+    public void showReconnectOption() {
         Platform.runLater(() -> {
-            primaryStage.setScene(combatScene);
-            setStatus("Connected! Waiting for opponent...");
+            primaryStage.setScene(connectionScene);
+            setStatus("Disconnected. Click Connect to reconnect.");
         });
     }
 
@@ -178,8 +178,11 @@ public class UIManager {
         });
     }
 
-    public void setStatus(String text) {
-        Platform.runLater(() -> statusLabel.setText(text));
+    public void switchToCombat() {
+        Platform.runLater(() -> {
+            primaryStage.setScene(combatScene);
+            setStatus("Connected! Waiting for opponent...");
+        });
     }
 
     public void updateEnemyBoard(int x, int y, String result) {
@@ -192,6 +195,14 @@ public class UIManager {
             }
             button.setDisable(true);
         });
+    }
+
+    public void setStatus(String text) {
+        Platform.runLater(() -> statusLabel.setText(text));
+    }
+
+    public void setEnemyGridEnabled(boolean enabled) {
+        Platform.runLater(() -> enemyGrid.setDisable(!enabled));
     }
 
     private void updateOwnBoard(int x, int y, String ori, int size) {
