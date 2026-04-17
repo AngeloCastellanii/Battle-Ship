@@ -7,18 +7,26 @@ import javafx.scene.layout.*;
 import javafx.stage.Stage;
 import java.util.Map;
 
+// Capa visual JavaFX del cliente.
+// Construye escenas, tableros y controla interacciones de usuario.
 public class UIManager {
+    // Referencias principales para callbacks y cambio de escena.
     private BattleshipClient client;
     private Stage primaryStage;
+    // Escena de login y escena principal de combate.
     private Scene connectionScene, combatScene;
+    // Grillas visuales de tablero propio y enemigo.
     private GridPane ownGrid, enemyGrid;
     private Button[][] ownButtons, enemyButtons;
+    // Estado visual global.
     private Label statusLabel;
     private VBox placementBox;
     private ListView<String> shipListView;
     private Label selectedShipLabel;
+    // Orientacion actual elegida por usuario al colocar barcos.
     private char currentOrientation = 'H';
 
+    // Tamanos usados para pintar y remover items de la lista de barcos.
     private static final Map<String, Integer> SHIP_SIZES = Map.of(
         "PORTAAVIONES", 5,
         "ACORAZADO", 4,
@@ -45,11 +53,13 @@ public class UIManager {
         this.primaryStage = primaryStage;
     }
 
+    // Inicializa todas las escenas de la app.
     public void createScenes() {
         createConnectionScene();
         createCombatScene();
     }
 
+    // Pantalla inicial para host, puerto y nombre de jugador.
     private void createConnectionScene() {
         VBox vbox = new VBox(20);
         vbox.setPadding(new Insets(40));
@@ -84,6 +94,7 @@ public class UIManager {
         connectButton.setStyle(BTN_PRIMARY + "-fx-font-size: 14px; -fx-padding: 12 25;");
         connectButton.setMaxWidth(Double.MAX_VALUE);
         
+        // Al presionar conectar, valido datos basicos y delego a NetworkManager.
         connectButton.setOnAction(e -> {
             String host = hostField.getText().trim();
             String portText = portField.getText().trim();
@@ -101,6 +112,7 @@ public class UIManager {
         connectionScene = new Scene(vbox, 450, 450);
     }
 
+    // Factor comun de estilo para campos de texto.
     private TextField createStyledTextField(String text, String prompt) {
         TextField tf = new TextField(text);
         tf.setPromptText(prompt);
@@ -108,6 +120,7 @@ public class UIManager {
         return tf;
     }
 
+    // Escena principal: panel de colocacion + tablero propio + tablero enemigo.
     private void createCombatScene() {
         BorderPane borderPane = new BorderPane();
         borderPane.setStyle("-fx-background-color: " + BG_COLOR + ";");
@@ -119,7 +132,7 @@ public class UIManager {
         statusLabel.setAlignment(Pos.CENTER);
         borderPane.setTop(statusLabel);
 
-        // Panel de colocación
+        // Panel de colocacion para seleccionar barco y orientacion.
         VBox placementControls = new VBox(15);
         placementControls.setStyle(PANEL_STYLE);
         placementControls.setMinWidth(280);
@@ -145,6 +158,7 @@ public class UIManager {
         selectedShipLabel = new Label("SELECTED: PORTAAVIONES");
         selectedShipLabel.setStyle("-fx-text-fill: #00e5ff; -fx-font-size: 11px; -fx-font-weight: bold;");
 
+        // Reflejo inmediato del item activo de la lista.
         shipListView.getSelectionModel().selectedItemProperty().addListener((obs, oldV, newV) -> {
             if (newV != null) {
                 selectedShipLabel.setText("SELECTED: " + newV.split(" ")[0]);
@@ -182,9 +196,11 @@ public class UIManager {
         placementControls.setVisible(false);
         this.placementBox = placementControls;
 
+        // Los dos tableros se muestran lado a lado.
         HBox boardsBox = new HBox(40);
         boardsBox.setAlignment(Pos.CENTER);
         boardsBox.getChildren().addAll(createBoardWithLabels("COMMANDER SECTOR", true), createBoardWithLabels("ENGAGEMENT SECTOR", false));
+        // Al inicio, no se puede atacar hasta que haya turno.
         enemyGrid.setDisable(true);
 
         HBox mainContainer = new HBox(25);
@@ -195,6 +211,7 @@ public class UIManager {
         combatScene = new Scene(borderPane, 1200, 750);
     }
 
+    // Crea un tablero con etiquetas de coordenadas.
     private VBox createBoardWithLabels(String title, boolean isOwn) {
         VBox panel = new VBox(10);
         panel.setAlignment(Pos.CENTER);
@@ -209,6 +226,7 @@ public class UIManager {
         grid.setHgap(3);
         grid.setVgap(3);
 
+        // Matriz de botones para actualizar celdas por coordenada.
         Button[][] buttons = new Button[10][10];
 
         for (int j = 0; j < 10; j++) {
@@ -232,6 +250,7 @@ public class UIManager {
                 buttons[i][j].setPrefSize(40, 40);
                 
                 final int row = i, col = j;
+                // La grilla propia coloca barcos; la enemiga envia ataques.
                 if (isOwn) {
                     buttons[i][j].setOnAction(e -> handlePlacementClick(row, col));
                 } else {
@@ -249,6 +268,7 @@ public class UIManager {
         return panel;
     }
 
+    // Click sobre tablero propio durante fase de colocacion.
     private void handlePlacementClick(int x, int y) {
         if (!placementBox.isVisible()) return;
         String selection = shipListView.getSelectionModel().getSelectedItem();
@@ -262,6 +282,7 @@ public class UIManager {
         String shipName = selection.split(" ")[0];
         String ori = String.valueOf(currentOrientation);
 
+        // Primero valido localmente, luego envio PLACE al servidor.
         if (client.validatePlacement(shipName, x, y, ori)) {
             client.setCurrentShip(shipName);
             client.setWaitingForPlace(true);
@@ -273,6 +294,7 @@ public class UIManager {
         }
     }
 
+    // Confirmacion final de colocacion despues de PLACE_OK del servidor.
     public void confirmShipPlacement(String shipName, int x, int y, String ori, int size) {
         Platform.runLater(() -> {
             updateOwnBoard(x, y, ori, size);
@@ -290,14 +312,17 @@ public class UIManager {
         });
     }
 
+    // Click sobre tablero enemigo: intento de ataque.
     private void handleAttackClick(int x, int y) {
         client.handleAttack(x, y);
     }
 
+    // Vuelve a pantalla de conexion tras una perdida de enlace.
     public void showReconnectOption() {
         Platform.runLater(() -> { primaryStage.setScene(connectionScene); setStatus("SIGNAL LOST. RECONNECTING..."); });
     }
 
+    // Habilita panel de despliegue cuando comienza fase de setup.
     public void showPlacement() {
         Platform.runLater(() -> {
             setStatus("POSITION YOUR FLEET ON THE GRID.");
@@ -308,10 +333,12 @@ public class UIManager {
         });
     }
 
+    // Cambia a la escena de juego luego de handshake CONNECTED.
     public void switchToCombat() {
         Platform.runLater(() -> { primaryStage.setScene(combatScene); setStatus("SYSTEMS ONLINE. SYNCING..."); });
     }
 
+    // Pinta el resultado de un ataque en la grilla enemiga.
     public void updateEnemyBoard(int x, int y, String result) {
         Platform.runLater(() -> {
             Button btn = enemyButtons[x][y];
@@ -324,10 +351,13 @@ public class UIManager {
         });
     }
 
+    // Actualiza texto de estado superior.
     public void setStatus(String text) { Platform.runLater(() -> statusLabel.setText(text.toUpperCase())); }
 
+    // Habilita/disabilita grilla enemiga segun turno.
     public void setEnemyGridEnabled(boolean enabled) { Platform.runLater(() -> enemyGrid.setDisable(!enabled)); }
 
+    // Pinta visualmente un barco en tablero propio.
     public void updateOwnBoard(int x, int y, String ori, int size) {
         Platform.runLater(() -> {
             for (int i = 0; i < size; i++) {
@@ -340,6 +370,7 @@ public class UIManager {
 
     public Scene getConnectionScene() { return connectionScene; }
 
+    // Dialogo generico para notificaciones al usuario.
     public void showAlert(String title, String message) {
         Platform.runLater(() -> {
             Alert alert = new Alert(Alert.AlertType.INFORMATION);

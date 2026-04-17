@@ -1,29 +1,42 @@
 import java.io.*;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+// Capa de red del cliente.
+// Maneja conexion TCP, escucha de mensajes y traduccion de protocolo a acciones de UI.
 public class NetworkManager {
-    private static final int CONNECT_TIMEOUT_MS = 5000;
+    // Timeout de conexion para evitar bloqueos largos cuando la red falla.
+    private static final int CONNECT_TIMEOUT_MS = 15000;
 
+    // Referencia al cliente principal para invocar callbacks de estado.
     private BattleshipClient client;
+    // Recursos de comunicacion TCP.
     private Socket socket;
     private BufferedReader in;
     private PrintWriter out;
+    // Listener dedicado en hilo virtual para no bloquear UI.
     private ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    // Marca si el handshake CONNECTED ya fue exitoso.
     private volatile boolean connected = false;
 
     public NetworkManager(BattleshipClient client) {
         this.client = client;
     }
 
+    // Abre conexion con servidor y envia comando CONNECT del protocolo.
     public void connectToServer(String host, int port, String name) {
         try {
+            // Siempre parto de un estado limpio por si venia de intento anterior.
             close();
 
-            socket = new Socket();
-            socket.connect(new InetSocketAddress(host, port), CONNECT_TIMEOUT_MS);
+            // Intento conexion por todas las direcciones resueltas del host.
+            socket = connectWithFallback(host, port);
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out = new PrintWriter(socket.getOutputStream(), true);
             connected = false;
@@ -33,12 +46,43 @@ public class NetworkManager {
 
             executor.submit(this::listenForMessages);
 
+        } catch (SocketTimeoutException e) {
+            close();
+            client.showConnectionError("Connection timeout to " + host + ":" + port + ". Verify IP and that server is running.");
         } catch (IOException e) {
             close();
             client.showConnectionError(e.getMessage());
         }
     }
 
+    // Prueba conectarse por cada IP asociada al host (IPv4/IPv6), devolviendo la primera valida.
+    private Socket connectWithFallback(String host, int port) throws IOException {
+        InetAddress[] addresses = InetAddress.getAllByName(host);
+        List<String> errors = new ArrayList<>();
+
+        for (InetAddress address : addresses) {
+            Socket candidate = new Socket();
+            try {
+                candidate.connect(new InetSocketAddress(address, port), CONNECT_TIMEOUT_MS);
+                return candidate;
+            } catch (IOException e) {
+                errors.add(address.getHostAddress() + " -> " + e.getMessage());
+                try {
+                    candidate.close();
+                } catch (IOException ignored) {
+                }
+            }
+        }
+
+        if (errors.isEmpty()) {
+            throw new IOException("Could not resolve host: " + host);
+        }
+
+        // Si ninguna IP funciono, retorno un detalle acumulado para diagnostico.
+        throw new IOException("Could not connect to " + host + ":" + port + " (" + String.join(" | ", errors) + ")");
+    }
+
+    // Bucle de escucha continuo del canal de entrada.
     private void listenForMessages() {
         try {
             String message;
@@ -47,6 +91,7 @@ public class NetworkManager {
                 processMessage(message);
             }
 
+            // Si el stream termina, diferencio si fue durante login o en partida activa.
             if (!connected) {
                 client.showConnectionError("Server closed the connection during login.");
             } else {
@@ -64,6 +109,7 @@ public class NetworkManager {
         }
     }
 
+    // Traduce mensajes del protocolo a acciones concretas del cliente.
     private void processMessage(String message) {
         String[] parts = message.split(" ");
         if (parts.length == 0) return;
@@ -99,6 +145,7 @@ public class NetworkManager {
             }
             case "CONNECTED" -> {
                 if (parts.length >= 2) {
+                    // Handshake exitoso: ahora si entro a pantalla principal de juego.
                     client.setCurrentPlayerId(Integer.parseInt(parts[1]));
                     connected = true;
                     client.switchToCombat();
@@ -120,6 +167,7 @@ public class NetworkManager {
                 String errorMsg = message.substring(6);
                 client.rejectCurrentPlacement();
 
+                // Si aun no conecto formalmente, trato este error como fallo de login.
                 if (!connected) {
                     client.showConnectionError(errorMsg);
                     close();
@@ -134,12 +182,14 @@ public class NetworkManager {
         }
     }
 
+    // Envio de comandos al servidor (CONNECT ya se envia en connectToServer).
     public void sendMessage(String message) {
         if (out != null) {
             out.println(message);
         }
     }
 
+    // Cierra recursos de red y deja el manager en estado reutilizable.
     public void close() {
         connected = false;
         try {

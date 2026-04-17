@@ -6,14 +6,21 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+// Orquestador de la partida: conexiones, reglas de colocacion, turnos y victoria.
+// Todos los metodos publicos de flujo se sincronizan para evitar condiciones de carrera.
 final class GameSession {
+    // Relacion cliente de red -> wrapper de conexion (socket + writer + jugador asignado).
     private final Map<Integer, PlayerConnection> connections = new HashMap<>();
+    // Relacion id de jugador (1 o 2) -> estado de tablero y barcos.
     private final Map<Integer, PlayerState> players = new HashMap<>();
+    // Flags de fase para controlar flujo de la partida.
     private boolean setupStarted;
     private boolean battleStarted;
     private boolean matchFinished;
+    // Identifica quien ataca en el turno actual.
     private int currentTurn;
 
+    // Registra un cliente como jugador, valida cupo y notifica inicio de setup.
     synchronized void connect(int clientId, Socket socket, BufferedWriter out, String playerName) throws IOException {
         PlayerConnection connection = connections.computeIfAbsent(
             clientId,
@@ -25,6 +32,7 @@ final class GameSession {
             return;
         }
 
+        // Si la partida termino, reseteo para permitir una nueva sesion limpia.
         if (matchFinished) {
             resetState();
             connection = connections.computeIfAbsent(
@@ -33,6 +41,7 @@ final class GameSession {
             );
         }
 
+        // El protocolo actual soporta maximo 2 jugadores por partida.
         if (players.size() >= ProtocolConfig.MAX_PLAYERS) {
             connection.send(ProtocolConfig.error("ROOM_FULL", "La sala esta llena. Espera a que finalice la partida."));
             connection.closeQuietly();
@@ -51,12 +60,14 @@ final class GameSession {
             return;
         }
 
+        // Cuando ambos conectan, habilito fase de colocacion para los dos.
         setupStarted = true;
         battleStarted = false;
         currentTurn = 0;
         broadcast("START 1");
     }
 
+    // Registra un barco para el jugador actual, con todas las validaciones de negocio.
     synchronized void place(int clientId, BufferedWriter out, String shipNameRaw, String xRaw, String yRaw, String orientationRaw) throws IOException {
         PlayerConnection connection = connections.get(clientId);
         if (connection == null || connection.playerId() == null) {
@@ -104,6 +115,7 @@ final class GameSession {
             return;
         }
 
+        // Construyo todas las celdas que ocuparia el barco para validar bordes y superposicion.
         List<Point> cells = buildShipCells(startX, startY, shipSize, orientation);
         if (cells.isEmpty()) {
             sendToRawClient(out, ProtocolConfig.error("INVALID_PLACEMENT", "Posicion invalida para " + shipName));
@@ -125,11 +137,13 @@ final class GameSession {
             ServerLogger.info(state.name() + " completo su tablero");
         }
 
+        // La batalla inicia unicamente cuando ambos terminaron de ubicar toda su flota.
         if (allPlayersReady()) {
             startBattle();
         }
     }
 
+    // Procesa un ataque de turno: validacion, impacto y avance de juego.
     synchronized void attack(int clientId, BufferedWriter out, String xRaw, String yRaw) throws IOException {
         PlayerConnection connection = connections.get(clientId);
         if (connection == null || connection.playerId() == null) {
@@ -176,6 +190,7 @@ final class GameSession {
             return;
         }
 
+        // Marco ataque y determino resultado segun celda impactada.
         defender.registerAttack(target);
         ShipPlacement ship = defender.shipAt(target);
         String result;
@@ -189,16 +204,19 @@ final class GameSession {
 
         broadcast("RESULT " + targetX + " " + targetY + " " + result);
 
+        // Si hundio toda la flota rival, se termina la partida.
         if (defender.allShipsSunk()) {
             broadcast("VICTORY " + attackerId);
             endMatch();
             return;
         }
 
+        // Si no termino, turno pasa al oponente.
         currentTurn = defenderId;
         broadcast("TURN " + currentTurn);
     }
 
+    // Limpia estado del jugador desconectado y reinicia partida si era necesario.
     synchronized void handleDisconnect(int clientId) {
         PlayerConnection connection = connections.remove(clientId);
         if (connection == null) {
@@ -228,6 +246,7 @@ final class GameSession {
         }
     }
 
+    // Cierre global de servidor: notifica a clientes, cierra sockets y limpia memoria.
     synchronized void shutdown() {
         try {
             broadcast(ProtocolConfig.error("SERVER_SHUTDOWN", "Servidor en cierre"));
@@ -242,6 +261,7 @@ final class GameSession {
         resetState();
     }
 
+    // Expande una coordenada inicial en la lista de celdas ocupadas por un barco.
     private List<Point> buildShipCells(int startX, int startY, int size, String orientation) {
         List<Point> cells = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
@@ -258,10 +278,12 @@ final class GameSession {
         return cells;
     }
 
+    // Verifica si ambos jugadores terminaron de colocar su flota completa.
     private boolean allPlayersReady() {
         return players.size() == 2 && players.values().stream().allMatch(PlayerState::isReady);
     }
 
+    // Inicializa fase de combate y define primer turno.
     private void startBattle() throws IOException {
         if (battleStarted) {
             return;
@@ -273,6 +295,7 @@ final class GameSession {
         ServerLogger.info("La batalla comenzo. Juega primero el jugador 1.");
     }
 
+    // Finaliza partida actual y deja todo listo para un nuevo match.
     private void endMatch() {
         matchFinished = true;
         battleStarted = false;
@@ -286,6 +309,7 @@ final class GameSession {
         resetState();
     }
 
+    // Reinicio interno del estado compartido de juego.
     private void resetState() {
         connections.clear();
         players.clear();
@@ -295,16 +319,19 @@ final class GameSession {
         currentTurn = 0;
     }
 
+    // Envia el mismo mensaje a todos los clientes conectados actualmente.
     private void broadcast(String response) throws IOException {
         for (PlayerConnection connection : new ArrayList<>(connections.values())) {
             connection.send(response);
         }
     }
 
+    // Utilidad para mapear rival directo en partida de dos jugadores.
     private int opponentOf(int playerId) {
         return playerId == 1 ? 2 : 1;
     }
 
+    // Envio directo para respuestas de validacion al cliente que hizo la accion.
     private void sendToRawClient(BufferedWriter out, String response) throws IOException {
         out.write(response);
         out.newLine();

@@ -1,9 +1,15 @@
 import java.util.*;
 
+// Logica local de tablero del cliente.
+// Se usa para validacion previa y render inmediato tras confirmaciones del servidor.
 public class GameManager {
+    // Referencia al cliente principal por si se requiere coordinacion futura.
     private BattleshipClient client;
+    // Tablero local de 10x10 (\0 = vacio, letra = barco).
     private final char[][] board = new char[10][10];
+    // Conjunto de barcos ya confirmados.
     private final java.util.Set<String> placedShips = new java.util.HashSet<>();
+    // Catalogo de tamanos por nombre de barco.
     private final java.util.Map<String, Integer> shipSizes = java.util.Map.of(
         "PORTAAVIONES", 5,
         "ACORAZADO", 4,
@@ -16,6 +22,7 @@ public class GameManager {
         this.client = client;
     }
 
+    // Verifica limites, orientacion y superposicion antes de enviar PLACE al servidor.
     public boolean validatePlacement(String ship, int x, int y, String ori) {
         int size = shipSizes.get(ship);
         if (x < 0 || x >= 10 || y < 0 || y >= 10) return false;
@@ -34,6 +41,7 @@ public class GameManager {
         return true;
     }
 
+    // Marca en tablero local las celdas ocupadas por el barco confirmado.
     public void placeOnBoard(String ship, int x, int y, String ori) {
         int size = shipSizes.get(ship);
         if (ori.equals("H")) {
@@ -51,6 +59,7 @@ public class GameManager {
         return shipSizes.get(ship);
     }
 
+    // Registra que ese barco ya fue colocado correctamente.
     public void addPlacedShip(String ship) {
         placedShips.add(ship);
     }
